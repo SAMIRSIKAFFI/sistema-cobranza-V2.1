@@ -795,3 +795,27 @@ elif menu == "📲 GENERADOR DE SMS":
 elif menu == "🚧 Módulo Histórico (En Desarrollo)":
     st.title("📈 Histórico")
     st.info("Aquí construiremos el dashboard acumulado mensual.")
+```
+
+### **PASO 1-C: Pegar el código**
+
+1. Haz clic dentro del editor grande (donde vas a escribir el código)
+2. Pega el código (Ctrl+V)
+3. **Baja hasta abajo de la página**
+4. En el cuadro "Commit new file" escribe: **"Crear app.py"**
+5. Haz clic en el botón verde **"Commit new file"**
+
+---
+
+## ✅ **ARCHIVO 2: requirements.txt** (Dependencias)
+
+### **PASO 2-A: Crear el archivo**
+
+1. En tu repositorio, haz clic en **"Add file"** → **"Create new file"**
+2. En "Name your file..." escribe: **`requirements.txt`**
+
+### **PASO 2-B: Copiar este contenido**
+```
+streamlit>=1.28.0
+pandas>=2.0.0
+openpyxl>=3.1.0
