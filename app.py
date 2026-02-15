@@ -434,7 +434,7 @@ def modulo_graficos():
 
 
 def modulo_sms():
-    st.markdown('<div class="main-header">📲 GENERADOR PROFESIONAL DE SMS</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">📲 GENERADOR DE SMS - CLIENTE VIVA</div>', unsafe_allow_html=True)
     
     # Verificar que exista cartera cargada
     if "df_deuda_base" not in st.session_state or st.session_state.df_deuda_base is None:
@@ -443,29 +443,8 @@ def modulo_sms():
         return
     
     df_cartera = st.session_state.df_deuda_base.copy()
-    st.success(f"✅ Cartera disponible: {len(df_cartera):,} registros, {df_cartera['ID_COBRANZA'].nunique()} códigos únicos")
     
-    st.markdown("---")
-    
-    # Información de formato
-    with st.expander("📋 Formato de archivos requerido", expanded=False):
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("""
-            **📂 Archivo SUSCRIPTOR:**
-            - `CODIGO` - ID del cliente
-            - `NUMERO` - Teléfono para SMS
-            - `NOMBRE` - Nombre del cliente
-            - `FECHA` - Fecha de referencia
-            - `MONTO` - (Opcional, se calcula de cartera)
-            """)
-        with col2:
-            st.markdown("""
-            **💵 Archivo PAGOS:**
-            - `ID_COBRANZA` o `CODIGO` - ID del cliente
-            - `PERIODO` - Periodo pagado
-            - `IMPORTE` - Monto pagado
-            """)
+    st.success(f"✅ Cartera VIVA disponible: {len(df_cartera):,} registros | {df_cartera['ID_COBRANZA'].nunique()} códigos | {df_cartera['TIPO'].nunique()} tipos")
     
     st.markdown("---")
     
@@ -474,13 +453,43 @@ def modulo_sms():
         df.columns = df.columns.str.strip().str.upper().str.replace(" ", "_")
         return df
     
-    # PASO 1: Cargar BASE SUSCRIPTOR
-    st.markdown("### 📂 PASO 1: Cargar BASE SUSCRIPTOR")
+    # PASO 1: SELECCIÓN DE TIPOS
+    st.markdown("### 🎯 PASO 1: Seleccionar TIPOS de Cartera VIVA")
+    
+    tipos_disponibles = sorted(df_cartera["TIPO"].unique().tolist())
+    
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        seleccionar_todos = st.checkbox("✅ Seleccionar TODOS", value=True)
+    
+    with col2:
+        if seleccionar_todos:
+            tipos_seleccionados = tipos_disponibles
+            st.info(f"📊 Todos los tipos seleccionados: {', '.join(tipos_seleccionados)}")
+        else:
+            tipos_seleccionados = st.multiselect(
+                "Selecciona uno o varios tipos:",
+                tipos_disponibles,
+                default=tipos_disponibles[:1] if tipos_disponibles else []
+            )
+    
+    if not tipos_seleccionados:
+        st.warning("⚠️ Debes seleccionar al menos un TIPO de cartera")
+        return
+    
+    # Filtrar cartera por tipos seleccionados
+    df_cartera_filtrada = df_cartera[df_cartera["TIPO"].isin(tipos_seleccionados)].copy()
+    
+    st.success(f"✅ Cartera filtrada: {len(df_cartera_filtrada):,} registros de tipos: {', '.join(tipos_seleccionados)}")
+    
+    st.markdown("---")
+    
+    # PASO 2: Cargar BASE SUSCRIPTOR
+    st.markdown("### 📂 PASO 2: Cargar BASE SUSCRIPTOR")
     archivo_suscriptor = st.file_uploader(
-        "Subir archivo SUSCRIPTOR",
+        "Subir archivo SUSCRIPTOR (NUMERO, NOMBRE, FECHA, CODIGO)",
         type=["xlsx"],
-        key="sms_suscriptor",
-        help="Debe contener: CODIGO, NUMERO, NOMBRE, FECHA"
+        key="sms_suscriptor"
     )
     
     if not archivo_suscriptor:
@@ -491,30 +500,28 @@ def modulo_sms():
         df_suscriptor = pd.read_excel(archivo_suscriptor)
         df_suscriptor = limpiar_columnas(df_suscriptor)
         
-        # Validar columnas SUSCRIPTOR
         columnas_suscriptor = {"CODIGO", "NUMERO", "NOMBRE", "FECHA"}
         if not columnas_suscriptor.issubset(df_suscriptor.columns):
-            st.error("❌ El archivo SUSCRIPTOR no tiene las columnas obligatorias")
+            st.error("❌ Columnas faltantes en SUSCRIPTOR")
             st.error(f"**Requeridas:** CODIGO, NUMERO, NOMBRE, FECHA")
             st.error(f"**Encontradas:** {', '.join(df_suscriptor.columns)}")
             return
         
         df_suscriptor["CODIGO"] = df_suscriptor["CODIGO"].astype(str)
-        st.success(f"✅ Suscriptores cargados: {len(df_suscriptor):,} registros")
+        st.success(f"✅ Suscriptores: {len(df_suscriptor):,} registros")
         
     except Exception as e:
-        st.error(f"❌ Error al cargar SUSCRIPTOR: {str(e)}")
+        st.error(f"❌ Error: {str(e)}")
         return
     
     st.markdown("---")
     
-    # PASO 2: Cargar BASE PAGOS
-    st.markdown("### 💵 PASO 2: Cargar BASE PAGOS")
+    # PASO 3: Cargar BASE PAGOS
+    st.markdown("### 💵 PASO 3: Cargar BASE PAGOS")
     archivo_pagos = st.file_uploader(
-        "Subir archivo PAGOS",
+        "Subir archivo PAGOS (CODIGO, PERIODO, IMPORTE)",
         type=["xlsx"],
-        key="sms_pagos",
-        help="Debe contener: ID_COBRANZA (o CODIGO), PERIODO, IMPORTE"
+        key="sms_pagos"
     )
     
     if not archivo_pagos:
@@ -525,14 +532,13 @@ def modulo_sms():
         df_pagos = pd.read_excel(archivo_pagos)
         df_pagos = limpiar_columnas(df_pagos)
         
-        # Validar columnas PAGOS (acepta ID_COBRANZA o CODIGO)
         if "ID_COBRANZA" in df_pagos.columns:
             df_pagos = df_pagos.rename(columns={"ID_COBRANZA": "CODIGO"})
         
         columnas_pagos = {"CODIGO", "PERIODO", "IMPORTE"}
         if not columnas_pagos.issubset(df_pagos.columns):
-            st.error("❌ El archivo PAGOS no tiene las columnas obligatorias")
-            st.error(f"**Requeridas:** ID_COBRANZA o CODIGO, PERIODO, IMPORTE")
+            st.error("❌ Columnas faltantes en PAGOS")
+            st.error(f"**Requeridas:** CODIGO, PERIODO, IMPORTE")
             st.error(f"**Encontradas:** {', '.join(df_pagos.columns)}")
             return
         
@@ -540,271 +546,186 @@ def modulo_sms():
         df_pagos["PERIODO"] = df_pagos["PERIODO"].astype(str)
         df_pagos["IMPORTE"] = pd.to_numeric(df_pagos["IMPORTE"], errors="coerce").fillna(0)
         
-        st.success(f"✅ Pagos cargados: {len(df_pagos):,} registros")
+        st.success(f"✅ Pagos: {len(df_pagos):,} registros")
         
     except Exception as e:
-        st.error(f"❌ Error al cargar PAGOS: {str(e)}")
+        st.error(f"❌ Error: {str(e)}")
         return
     
     st.markdown("---")
     
-    # PASO 3: REALIZAR CRUCE
-    st.markdown("### 🔗 PASO 3: Cruce de Datos")
+    # PASO 4: CRUCE Y ANÁLISIS
+    st.markdown("### 🔗 PASO 4: Cruce y Depuración Automática")
     
-    with st.spinner("Procesando cruce con CARTERA..."):
+    with st.spinner("Procesando cruce con cartera VIVA..."):
         try:
-            # Preparar cartera
-            df_cartera["CODIGO"] = df_cartera["ID_COBRANZA"].astype(str)
-            df_cartera["PERIODO"] = df_cartera["PERIODO"].astype(str)
+            # Preparar cartera filtrada
+            df_cartera_filtrada["CODIGO"] = df_cartera_filtrada["ID_COBRANZA"].astype(str)
+            df_cartera_filtrada["PERIODO"] = df_cartera_filtrada["PERIODO"].astype(str)
             
             # Calcular periodos totales por código
-            periodos_totales = df_cartera.groupby("CODIGO").agg({
-                "PERIODO": "count",
-                "DEUDA": "sum",
-                "TIPO": lambda x: x.iloc[0] if len(x) > 0 else "SIN TIPO"
-            }).reset_index()
-            periodos_totales.columns = ["CODIGO", "PERIODOS_TOTALES", "DEUDA_TOTAL", "TIPO"]
+            periodos_totales = df_cartera_filtrada.groupby("CODIGO")["PERIODO"].count().reset_index()
+            periodos_totales.columns = ["CODIGO", "PERIODOS_TOTALES"]
+            
+            # Calcular deuda total por código
+            deuda_total = df_cartera_filtrada.groupby("CODIGO")["DEUDA"].sum().reset_index()
+            deuda_total.columns = ["CODIGO", "DEUDA_TOTAL"]
             
             # Calcular periodos pagados por código
-            periodos_pagados = df_pagos.groupby("CODIGO").agg({
-                "PERIODO": "count",
-                "IMPORTE": "sum"
-            }).reset_index()
-            periodos_pagados.columns = ["CODIGO", "PERIODOS_PAGADOS", "TOTAL_PAGADO"]
+            periodos_pagados = df_pagos.groupby("CODIGO")["PERIODO"].count().reset_index()
+            periodos_pagados.columns = ["CODIGO", "PERIODOS_PAGADOS"]
+            
+            # Calcular total pagado por código
+            total_pagado = df_pagos.groupby("CODIGO")["IMPORTE"].sum().reset_index()
+            total_pagado.columns = ["CODIGO", "TOTAL_PAGADO"]
             
             # Merge con suscriptor
-            df_analisis = df_suscriptor.merge(periodos_totales, on="CODIGO", how="left")
+            df_analisis = df_suscriptor.copy()
+            df_analisis = df_analisis.merge(periodos_totales, on="CODIGO", how="left")
+            df_analisis = df_analisis.merge(deuda_total, on="CODIGO", how="left")
             df_analisis = df_analisis.merge(periodos_pagados, on="CODIGO", how="left")
+            df_analisis = df_analisis.merge(total_pagado, on="CODIGO", how="left")
             
             # Rellenar NaN
             df_analisis["PERIODOS_TOTALES"] = df_analisis["PERIODOS_TOTALES"].fillna(0).astype(int)
             df_analisis["PERIODOS_PAGADOS"] = df_analisis["PERIODOS_PAGADOS"].fillna(0).astype(int)
             df_analisis["DEUDA_TOTAL"] = df_analisis["DEUDA_TOTAL"].fillna(0)
             df_analisis["TOTAL_PAGADO"] = df_analisis["TOTAL_PAGADO"].fillna(0)
-            df_analisis["TIPO"] = df_analisis["TIPO"].fillna("SIN TIPO")
             
-            # Calcular estado
+            # Calcular pendientes
             df_analisis["PERIODOS_PENDIENTES"] = df_analisis["PERIODOS_TOTALES"] - df_analisis["PERIODOS_PAGADOS"]
             df_analisis["SALDO_PENDIENTE"] = df_analisis["DEUDA_TOTAL"] - df_analisis["TOTAL_PAGADO"]
             df_analisis["SALDO_PENDIENTE"] = df_analisis["SALDO_PENDIENTE"].apply(lambda x: max(0, x))
             
-            # Clasificar clientes
-            def clasificar_cliente(row):
-                if row["PERIODOS_TOTALES"] == 0:
-                    return "SIN DEUDA"
-                elif row["SALDO_PENDIENTE"] == 0:
-                    return "PAGO TOTAL"
-                elif row["PERIODOS_PAGADOS"] == 0:
-                    return "MOROSO TOTAL"
-                else:
-                    return "PAGADOR PARCIAL"
+            # SIEMPRE DEPURAR: Eliminar pagos totales
+            df_analisis_depurado = df_analisis[df_analisis["PERIODOS_PENDIENTES"] > 0].copy()
             
-            df_analisis["CLASIFICACION"] = df_analisis.apply(clasificar_cliente, axis=1)
+            eliminados_pago_total = len(df_analisis) - len(df_analisis_depurado)
             
-            st.success("✅ Cruce realizado correctamente")
+            st.success("✅ Cruce realizado y pagos totales depurados")
             
-            # Mostrar resumen
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("👥 Total Clientes", f"{len(df_analisis):,}")
+                st.metric("👥 Total Inicial", f"{len(df_analisis):,}")
             with col2:
-                morosos = len(df_analisis[df_analisis["CLASIFICACION"] == "MOROSO TOTAL"])
-                st.metric("🔴 Morosos Totales", f"{morosos:,}")
+                st.metric("❌ Pagos Totales (eliminados)", f"{eliminados_pago_total:,}")
             with col3:
-                parciales = len(df_analisis[df_analisis["CLASIFICACION"] == "PAGADOR PARCIAL"])
-                st.metric("🟡 Pagadores Parciales", f"{parciales:,}")
-            with col4:
-                sin_deuda = len(df_analisis[df_analisis["CLASIFICACION"].isin(["PAGO TOTAL", "SIN DEUDA"])])
-                st.metric("🟢 Al Día", f"{sin_deuda:,}")
+                st.metric("✅ Con Saldo Pendiente", f"{len(df_analisis_depurado):,}")
             
         except Exception as e:
-            st.error(f"❌ Error en el cruce: {str(e)}")
+            st.error(f"❌ Error en cruce: {str(e)}")
             return
+    
+    if len(df_analisis_depurado) == 0:
+        st.warning("⚠️ No hay clientes con saldo pendiente después de depurar pagos totales")
+        return
     
     st.markdown("---")
     
-    # Vista previa de datos
-    with st.expander("👁️ Vista previa de análisis", expanded=False):
+    # Vista previa
+    with st.expander("👁️ Vista previa de datos procesados"):
         st.dataframe(
-            df_analisis[["CODIGO", "NOMBRE", "NUMERO", "TIPO", "PERIODOS_TOTALES", "PERIODOS_PAGADOS", "PERIODOS_PENDIENTES", "SALDO_PENDIENTE", "CLASIFICACION"]],
-            use_container_width=True,
-            height=300
+            df_analisis_depurado[["CODIGO", "NOMBRE", "NUMERO", "PERIODOS_TOTALES", "PERIODOS_PAGADOS", "PERIODOS_PENDIENTES", "SALDO_PENDIENTE"]].head(20),
+            use_container_width=True
         )
     
     st.markdown("---")
     
-    # PASO 4: OPCIONES DE GENERACIÓN
-    st.markdown("### 🎯 PASO 4: Opciones de Generación de SMS")
+    # PASO 5: OPCIONES DE CAMPAÑA
+    st.markdown("### 🎯 PASO 5: Configurar Campaña SMS")
     
-    st.info("💡 **Selecciona UNA opción de las siguientes:**")
+    st.info("💡 Los pagos totales ya fueron depurados. Ahora elige el tipo de campaña:")
     
-    opcion = st.radio(
-        "Modo de generación:",
+    opcion_campana = st.radio(
+        "Tipo de campaña:",
         [
-            "📊 Opción 1: Generar por TIPO de deuda",
-            "🔴 Opción 2: Solo MOROSOS TOTALES (0 pagos)",
-            "🟡 Opción 3: Solo PAGADORES PARCIALES (pagaron algo, deben algo)"
+            "🔴 CAMPAÑA AGRESIVA: Solo morosos totales (0 pagos realizados)",
+            "🟡 CAMPAÑA GENERAL: Todos con al menos 1 periodo pendiente"
         ],
-        index=0
+        index=1
     )
+    
+    # Filtrar según opción
+    if "AGRESIVA" in opcion_campana:
+        df_campana = df_analisis_depurado[df_analisis_depurado["PERIODOS_PAGADOS"] == 0].copy()
+        tipo_campana = "MOROSOS"
+    else:
+        df_campana = df_analisis_depurado.copy()
+        tipo_campana = "GENERAL"
+    
+    if len(df_campana) == 0:
+        st.warning(f"⚠️ No hay clientes para esta campaña")
+        return
+    
+    st.success(f"✅ Clientes para campaña: {len(df_campana):,}")
     
     st.markdown("---")
     
-    # Configuración adicional
+    # Configuración de archivos
+    st.markdown("### ⚙️ Configuración de Archivos")
+    
     col1, col2 = st.columns(2)
     with col1:
         num_archivos = st.number_input(
             "Dividir en cuántos archivos CSV",
             min_value=1,
-            max_value=20,
+            max_value=50,
             value=1,
-            help="Si tienes muchos registros, puedes dividirlos en varios archivos"
+            help="Para campañas grandes, dividir en varios archivos"
         )
     with col2:
         prefijo = st.text_input(
             "Prefijo de archivos",
-            value="SMS",
-            help="Nombre base para los archivos generados"
+            value=f"SMS_VIVA_{tipo_campana}",
+            help="Nombre base de los archivos"
         )
     
     st.markdown("---")
     
-    # Botón para generar
-    if st.button("🎯 GENERAR ARCHIVOS CSV", type="primary", use_container_width=True):
+    # Botón generar
+    if st.button("🚀 GENERAR ARCHIVOS SMS PARA CAMPAÑA", type="primary", use_container_width=True):
         
-        # Filtrar según opción seleccionada
-        if "Opción 1" in opcion:
-            # Generar por TIPO
-            st.markdown("### 📥 Archivos generados por TIPO:")
-            
-            # Filtrar solo los que tienen saldo pendiente
-            df_export = df_analisis[df_analisis["SALDO_PENDIENTE"] > 0].copy()
-            
-            if len(df_export) == 0:
-                st.warning("⚠️ No hay clientes con saldo pendiente")
-                return
-            
-            tipos_unicos = df_export["TIPO"].unique()
-            
-            for tipo in tipos_unicos:
-                df_tipo = df_export[df_export["TIPO"] == tipo].copy()
-                
-                if len(df_tipo) == 0:
-                    continue
-                
-                # Preparar columnas para SMS
-                df_csv = df_tipo[["NUMERO", "NOMBRE", "FECHA", "CODIGO", "SALDO_PENDIENTE"]].copy()
-                df_csv = df_csv.rename(columns={"SALDO_PENDIENTE": "MONTO"})
-                
-                # Dividir en partes si es necesario
-                tamaño = len(df_csv) // num_archivos + 1
-                
-                for i in range(num_archivos):
-                    inicio = i * tamaño
-                    fin = inicio + tamaño
-                    df_parte = df_csv.iloc[inicio:fin]
-                    
-                    if df_parte.empty:
-                        continue
-                    
-                    csv = df_parte.to_csv(index=False, sep=";", encoding="utf-8-sig")
-                    
-                    nombre_archivo = f"{prefijo}_{tipo}_{i+1}.csv" if num_archivos > 1 else f"{prefijo}_{tipo}.csv"
-                    
-                    st.download_button(
-                        label=f"⬇️ {nombre_archivo} ({len(df_parte)} registros)",
-                        data=csv,
-                        file_name=nombre_archivo,
-                        mime="text/csv",
-                        key=f"download_tipo_{tipo}_{i}",
-                        use_container_width=True
-                    )
-                
-                st.success(f"✅ Tipo '{tipo}': {len(df_tipo):,} registros")
+        st.markdown("### 📥 ARCHIVOS GENERADOS:")
         
-        elif "Opción 2" in opcion:
-            # Solo MOROSOS TOTALES
-            st.markdown("### 📥 Archivos generados: MOROSOS TOTALES")
-            
-            df_export = df_analisis[df_analisis["CLASIFICACION"] == "MOROSO TOTAL"].copy()
-            
-            if len(df_export) == 0:
-                st.warning("⚠️ No hay morosos totales (todos han pagado al menos 1 periodo)")
-                return
-            
-            st.info(f"📊 Se generarán archivos con {len(df_export):,} clientes que NO han pagado NINGÚN periodo")
-            
-            # Preparar columnas para SMS
-            df_csv = df_export[["NUMERO", "NOMBRE", "FECHA", "CODIGO", "SALDO_PENDIENTE"]].copy()
-            df_csv = df_csv.rename(columns={"SALDO_PENDIENTE": "MONTO"})
-            
-            # Dividir en partes
-            tamaño = len(df_csv) // num_archivos + 1
-            
-            for i in range(num_archivos):
-                inicio = i * tamaño
-                fin = inicio + tamaño
-                df_parte = df_csv.iloc[inicio:fin]
-                
-                if df_parte.empty:
-                    continue
-                
-                csv = df_parte.to_csv(index=False, sep=";", encoding="utf-8-sig")
-                
-                nombre_archivo = f"{prefijo}_MOROSOS_{i+1}.csv" if num_archivos > 1 else f"{prefijo}_MOROSOS.csv"
-                
-                st.download_button(
-                    label=f"⬇️ {nombre_archivo} ({len(df_parte)} registros)",
-                    data=csv,
-                    file_name=nombre_archivo,
-                    mime="text/csv",
-                    key=f"download_morosos_{i}",
-                    use_container_width=True
-                )
-            
-            st.success(f"✅ {len(df_export):,} morosos totales exportados")
+        # Preparar datos para SMS
+        df_csv = df_campana[["NUMERO", "NOMBRE", "FECHA", "CODIGO", "SALDO_PENDIENTE"]].copy()
+        df_csv = df_csv.rename(columns={"SALDO_PENDIENTE": "MONTO"})
         
-        elif "Opción 3" in opcion:
-            # Solo PAGADORES PARCIALES
-            st.markdown("### 📥 Archivos generados: PAGADORES PARCIALES")
+        # Información de la campaña
+        st.info(f"""
+        **📊 Resumen de Campaña:**
+        - Tipos incluidos: {', '.join(tipos_seleccionados)}
+        - Total registros: {len(df_csv):,}
+        - Tipo de campaña: {tipo_campana}
+        - Archivos a generar: {num_archivos}
+        """)
+        
+        # Dividir en archivos
+        tamaño = len(df_csv) // num_archivos + 1
+        
+        for i in range(num_archivos):
+            inicio = i * tamaño
+            fin = inicio + tamaño
+            df_parte = df_csv.iloc[inicio:fin]
             
-            df_export = df_analisis[df_analisis["CLASIFICACION"] == "PAGADOR PARCIAL"].copy()
+            if df_parte.empty:
+                continue
             
-            if len(df_export) == 0:
-                st.warning("⚠️ No hay pagadores parciales")
-                return
+            csv = df_parte.to_csv(index=False, sep=";", encoding="utf-8-sig")
             
-            st.info(f"📊 Se generarán archivos con {len(df_export):,} clientes que pagaron AL MENOS 1 periodo pero AÚN deben")
+            nombre_archivo = f"{prefijo}_{i+1}.csv" if num_archivos > 1 else f"{prefijo}.csv"
             
-            # Preparar columnas para SMS
-            df_csv = df_export[["NUMERO", "NOMBRE", "FECHA", "CODIGO", "SALDO_PENDIENTE"]].copy()
-            df_csv = df_csv.rename(columns={"SALDO_PENDIENTE": "MONTO"})
-            
-            # Dividir en partes
-            tamaño = len(df_csv) // num_archivos + 1
-            
-            for i in range(num_archivos):
-                inicio = i * tamaño
-                fin = inicio + tamaño
-                df_parte = df_csv.iloc[inicio:fin]
-                
-                if df_parte.empty:
-                    continue
-                
-                csv = df_parte.to_csv(index=False, sep=";", encoding="utf-8-sig")
-                
-                nombre_archivo = f"{prefijo}_PARCIALES_{i+1}.csv" if num_archivos > 1 else f"{prefijo}_PARCIALES.csv"
-                
-                st.download_button(
-                    label=f"⬇️ {nombre_archivo} ({len(df_parte)} registros)",
-                    data=csv,
-                    file_name=nombre_archivo,
-                    mime="text/csv",
-                    key=f"download_parciales_{i}",
-                    use_container_width=True
-                )
-            
-            st.success(f"✅ {len(df_export):,} pagadores parciales exportados")
+            st.download_button(
+                label=f"⬇️ {nombre_archivo} ({len(df_parte):,} registros)",
+                data=csv,
+                file_name=nombre_archivo,
+                mime="text/csv",
+                key=f"download_{i}",
+                use_container_width=True
+            )
+        
+        st.success(f"✅ {num_archivos} archivo(s) generado(s) exitosamente para campaña VIVA")
+        st.balloons()
 
 
 if menu == "📊 Dashboard Cruce Deuda vs Pagos":
