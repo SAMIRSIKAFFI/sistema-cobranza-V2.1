@@ -39,6 +39,13 @@ st.markdown("""
     .danger-card {
         border-left-color: #dc3545;
     }
+    .tipo-box {
+        background-color: #e8f4f8;
+        padding: 1rem;
+        border-radius: 8px;
+        border: 2px solid #667eea;
+        margin: 0.5rem 0;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -453,38 +460,101 @@ def modulo_sms():
         df.columns = df.columns.str.strip().str.upper().str.replace(" ", "_")
         return df
     
-    # PASO 1: SELECCIÓN DE TIPOS
-    st.markdown("### 🎯 PASO 1: Seleccionar TIPOS de Cartera VIVA")
+    # ==========================================
+    # PASO 1: SELECCIÓN DE TIPOS (MEJORADA)
+    # ==========================================
+    st.markdown("### 🎯 PASO 1: Seleccionar TIPOS de Cartera para la Campaña")
     
     tipos_disponibles = sorted(df_cartera["TIPO"].unique().tolist())
     
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        seleccionar_todos = st.checkbox("✅ Seleccionar TODOS", value=True)
+    # Obtener conteo de registros por tipo
+    tipo_conteo = df_cartera.groupby("TIPO").size().to_dict()
     
-    with col2:
-        if seleccionar_todos:
-            tipos_seleccionados = tipos_disponibles
-            st.info(f"📊 Todos los tipos seleccionados: {', '.join(tipos_seleccionados)}")
+    st.markdown('<div class="tipo-box">', unsafe_allow_html=True)
+    
+    # Opción: Seleccionar todos
+    seleccionar_todos = st.checkbox(
+        "✅ SELECCIONAR TODOS LOS TIPOS",
+        value=False,
+        help="Marca esta opción para incluir todos los tipos en la campaña"
+    )
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    if seleccionar_todos:
+        # Si marca "TODOS", mostrar resumen
+        tipos_seleccionados = tipos_disponibles
+        
+        st.success(f"✅ **TODOS LOS TIPOS SELECCIONADOS** ({len(tipos_seleccionados)} tipos)")
+        
+        # Mostrar tabla de resumen
+        st.markdown("**📊 Resumen de tipos incluidos:**")
+        
+        resumen_data = []
+        for tipo in tipos_seleccionados:
+            conteo = tipo_conteo.get(tipo, 0)
+            resumen_data.append({"TIPO": tipo, "REGISTROS": f"{conteo:,}"})
+        
+        df_resumen = pd.DataFrame(resumen_data)
+        st.dataframe(df_resumen, use_container_width=True, hide_index=True)
+        
+    else:
+        # Si NO marca "TODOS", mostrar checkboxes individuales
+        st.markdown("**📋 Selecciona los tipos que deseas incluir en la campaña:**")
+        st.markdown('<div class="tipo-box">', unsafe_allow_html=True)
+        
+        tipos_seleccionados = []
+        
+        # Crear checkboxes para cada tipo
+        cols = st.columns(2)  # 2 columnas para mejor distribución
+        
+        for idx, tipo in enumerate(tipos_disponibles):
+            col = cols[idx % 2]
+            conteo = tipo_conteo.get(tipo, 0)
+            
+            with col:
+                if st.checkbox(
+                    f"☑️ **{tipo}** ({conteo:,} registros)",
+                    value=False,
+                    key=f"tipo_{tipo}"
+                ):
+                    tipos_seleccionados.append(tipo)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Mostrar resumen de selección
+        if tipos_seleccionados:
+            st.success(f"✅ **{len(tipos_seleccionados)} tipo(s) seleccionado(s):** {', '.join(tipos_seleccionados)}")
         else:
-            tipos_seleccionados = st.multiselect(
-                "Selecciona uno o varios tipos:",
-                tipos_disponibles,
-                default=tipos_disponibles[:1] if tipos_disponibles else []
-            )
+            st.warning("⚠️ **No has seleccionado ningún tipo**")
     
+    # Validar que haya al menos un tipo seleccionado
     if not tipos_seleccionados:
-        st.warning("⚠️ Debes seleccionar al menos un TIPO de cartera")
+        st.error("❌ **Debes seleccionar al menos UN tipo para continuar**")
+        st.info("💡 Marca la casilla de un tipo específico o selecciona TODOS")
         return
     
     # Filtrar cartera por tipos seleccionados
     df_cartera_filtrada = df_cartera[df_cartera["TIPO"].isin(tipos_seleccionados)].copy()
     
-    st.success(f"✅ Cartera filtrada: {len(df_cartera_filtrada):,} registros de tipos: {', '.join(tipos_seleccionados)}")
+    st.markdown("---")
+    
+    # Mostrar resumen de la cartera filtrada
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("📄 Registros Filtrados", f"{len(df_cartera_filtrada):,}")
+    with col2:
+        st.metric("👤 Códigos Únicos", f"{df_cartera_filtrada['ID_COBRANZA'].nunique():,}")
+    with col3:
+        st.metric("💰 Deuda Total", f"Bs. {df_cartera_filtrada['DEUDA'].sum():,.2f}")
     
     st.markdown("---")
     
+    # ==========================================
     # PASO 2: Cargar BASE SUSCRIPTOR
+    # ==========================================
     st.markdown("### 📂 PASO 2: Cargar BASE SUSCRIPTOR")
     archivo_suscriptor = st.file_uploader(
         "Subir archivo SUSCRIPTOR (NUMERO, NOMBRE, FECHA, CODIGO)",
@@ -516,7 +586,9 @@ def modulo_sms():
     
     st.markdown("---")
     
+    # ==========================================
     # PASO 3: Cargar BASE PAGOS
+    # ==========================================
     st.markdown("### 💵 PASO 3: Cargar BASE PAGOS")
     archivo_pagos = st.file_uploader(
         "Subir archivo PAGOS (CODIGO, PERIODO, IMPORTE)",
@@ -554,7 +626,9 @@ def modulo_sms():
     
     st.markdown("---")
     
+    # ==========================================
     # PASO 4: CRUCE Y ANÁLISIS
+    # ==========================================
     st.markdown("### 🔗 PASO 4: Cruce y Depuración Automática")
     
     with st.spinner("Procesando cruce con cartera VIVA..."):
@@ -602,7 +676,7 @@ def modulo_sms():
             
             eliminados_pago_total = len(df_analisis) - len(df_analisis_depurado)
             
-            st.success("✅ Cruce realizado y pagos totales depurados")
+            st.success("✅ Cruce realizado y pagos totales depurados automáticamente")
             
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -631,10 +705,12 @@ def modulo_sms():
     
     st.markdown("---")
     
+    # ==========================================
     # PASO 5: OPCIONES DE CAMPAÑA
+    # ==========================================
     st.markdown("### 🎯 PASO 5: Configurar Campaña SMS")
     
-    st.info("💡 Los pagos totales ya fueron depurados. Ahora elige el tipo de campaña:")
+    st.info("💡 Los pagos totales ya fueron depurados automáticamente. Ahora elige el tipo de campaña:")
     
     opcion_campana = st.radio(
         "Tipo de campaña:",
@@ -642,7 +718,8 @@ def modulo_sms():
             "🔴 CAMPAÑA AGRESIVA: Solo morosos totales (0 pagos realizados)",
             "🟡 CAMPAÑA GENERAL: Todos con al menos 1 periodo pendiente"
         ],
-        index=1
+        index=1,
+        help="Agresiva = solo quienes NO pagaron nada | General = todos con al menos 1 pendiente"
     )
     
     # Filtrar según opción
@@ -657,11 +734,13 @@ def modulo_sms():
         st.warning(f"⚠️ No hay clientes para esta campaña")
         return
     
-    st.success(f"✅ Clientes para campaña: {len(df_campana):,}")
+    st.success(f"✅ Clientes para campaña {tipo_campana}: {len(df_campana):,}")
     
     st.markdown("---")
     
+    # ==========================================
     # Configuración de archivos
+    # ==========================================
     st.markdown("### ⚙️ Configuración de Archivos")
     
     col1, col2 = st.columns(2)
@@ -682,7 +761,9 @@ def modulo_sms():
     
     st.markdown("---")
     
+    # ==========================================
     # Botón generar
+    # ==========================================
     if st.button("🚀 GENERAR ARCHIVOS SMS PARA CAMPAÑA", type="primary", use_container_width=True):
         
         st.markdown("### 📥 ARCHIVOS GENERADOS:")
@@ -692,13 +773,19 @@ def modulo_sms():
         df_csv = df_csv.rename(columns={"SALDO_PENDIENTE": "MONTO"})
         
         # Información de la campaña
-        st.info(f"""
-        **📊 Resumen de Campaña:**
-        - Tipos incluidos: {', '.join(tipos_seleccionados)}
-        - Total registros: {len(df_csv):,}
-        - Tipo de campaña: {tipo_campana}
-        - Archivos a generar: {num_archivos}
+        st.markdown('<div class="tipo-box">', unsafe_allow_html=True)
+        st.markdown(f"""
+        **📊 RESUMEN DE CAMPAÑA VIVA:**
+        
+        - **Tipos incluidos:** {', '.join(tipos_seleccionados)}
+        - **Total registros:** {len(df_csv):,}
+        - **Tipo de campaña:** {tipo_campana}
+        - **Archivos a generar:** {num_archivos}
+        - **Saldo total:** Bs. {df_csv['MONTO'].sum():,.2f}
         """)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.markdown("---")
         
         # Dividir en archivos
         tamaño = len(df_csv) // num_archivos + 1
@@ -716,7 +803,7 @@ def modulo_sms():
             nombre_archivo = f"{prefijo}_{i+1}.csv" if num_archivos > 1 else f"{prefijo}.csv"
             
             st.download_button(
-                label=f"⬇️ {nombre_archivo} ({len(df_parte):,} registros)",
+                label=f"⬇️ {nombre_archivo} ({len(df_parte):,} registros | Bs. {df_parte['MONTO'].sum():,.2f})",
                 data=csv,
                 file_name=nombre_archivo,
                 mime="text/csv",
