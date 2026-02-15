@@ -68,7 +68,6 @@ def modulo_cruce():
     if "resultado_cruce" not in st.session_state:
         st.session_state.resultado_cruce = None
 
-    # PARTE 1: CARGA DE CARTERA
     if st.session_state.df_deuda_base is None:
         st.info("🔹 **Paso 1:** Carga la base de CARTERA/DEUDA")
         
@@ -88,6 +87,8 @@ def modulo_cruce():
 
                     if not columnas_deuda.issubset(df_deuda.columns):
                         st.error("❌ El archivo CARTERA no tiene las columnas obligatorias")
+                        st.error(f"**Columnas requeridas:** ID_COBRANZA, PERIODO, DEUDA, TIPO")
+                        st.error(f"**Columnas encontradas:** {', '.join(df_deuda.columns)}")
                         return
 
                     df_deuda["ID_COBRANZA"] = df_deuda["ID_COBRANZA"].astype(str)
@@ -115,7 +116,6 @@ def modulo_cruce():
                     st.error(f"❌ Error: {str(e)}")
         return
 
-    # PARTE 2: CARTERA YA CARGADA - MOSTRAR OPCIONES
     df_deuda = st.session_state.df_deuda_base
     
     col1, col2 = st.columns([3, 1])
@@ -138,7 +138,6 @@ def modulo_cruce():
 
     st.markdown("---")
 
-    # PARTE 3: CARGA DE PAGOS
     st.info("🔹 **Paso 2:** Carga el archivo de PAGOS para realizar el cruce")
     
     archivo_pagos = st.file_uploader(
@@ -157,6 +156,8 @@ def modulo_cruce():
                 columnas_pagos = {"ID_COBRANZA", "PERIODO", "IMPORTE"}
                 if not columnas_pagos.issubset(df_pagos.columns):
                     st.error("❌ El archivo PAGOS no tiene las columnas obligatorias")
+                    st.error(f"**Columnas requeridas:** ID_COBRANZA, PERIODO, IMPORTE")
+                    st.error(f"**Columnas encontradas:** {', '.join(df_pagos.columns)}")
                     return
 
                 df_pagos["ID_COBRANZA"] = df_pagos["ID_COBRANZA"].astype(str)
@@ -434,6 +435,30 @@ def modulo_graficos():
 
 def modulo_sms():
     st.title("📲 GENERADOR DE SMS")
+    
+    st.markdown("---")
+    
+    st.markdown("### 📋 Formato de archivos requerido:")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.info("""
+        **Archivo SUSCRIPTOR debe tener:**
+        - NUMERO (teléfono)
+        - NOMBRE
+        - FECHA
+        - CODIGO (ID del suscriptor)
+        - MONTO (deuda total)
+        """)
+    
+    with col2:
+        st.info("""
+        **Archivo PAGOS debe tener:**
+        - ID_COBRANZA (mismo que CODIGO)
+        - IMPORTE (monto pagado)
+        """)
+
+    st.markdown("---")
 
     def limpiar_columnas(df):
         df.columns = df.columns.str.strip().str.upper().str.replace(" ", "_")
@@ -446,51 +471,88 @@ def modulo_sms():
         st.info("⬆️ Sube ambos archivos para continuar")
         return
 
-    df_suscriptor = limpiar_columnas(pd.read_excel(archivo_suscriptor))
-    df_pagos = limpiar_columnas(pd.read_excel(archivo_pagos))
+    try:
+        df_suscriptor = pd.read_excel(archivo_suscriptor)
+        df_suscriptor = limpiar_columnas(df_suscriptor)
+        
+        df_pagos = pd.read_excel(archivo_pagos)
+        df_pagos = limpiar_columnas(df_pagos)
 
-    df_suscriptor["CODIGO"] = df_suscriptor["CODIGO"].astype(str)
-    df_suscriptor["MONTO"] = pd.to_numeric(df_suscriptor["MONTO"], errors="coerce").fillna(0)
-    df_pagos["ID_COBRANZA"] = df_pagos["ID_COBRANZA"].astype(str)
-    df_pagos["IMPORTE"] = pd.to_numeric(df_pagos["IMPORTE"], errors="coerce").fillna(0)
-
-    pagos_totales = df_pagos.groupby("ID_COBRANZA")["IMPORTE"].sum().reset_index()
-    pagos_totales.rename(columns={"IMPORTE": "TOTAL_PAGADO"}, inplace=True)
-
-    df_final = df_suscriptor.merge(pagos_totales, left_on="CODIGO", right_on="ID_COBRANZA", how="left")
-    df_final["TOTAL_PAGADO"] = df_final["TOTAL_PAGADO"].fillna(0)
-    df_final = df_final[df_final["TOTAL_PAGADO"] < df_final["MONTO"]]
-
-    columnas_exportar = ["NUMERO", "NOMBRE", "FECHA", "CODIGO", "MONTO"]
-    df_export = df_final[columnas_exportar].copy()
-
-    st.success(f"✅ {len(df_export):,} registros con saldo pendiente")
-    st.dataframe(df_export, use_container_width=True, height=300)
-
-    partes = st.number_input("Cantidad de archivos CSV", min_value=1, value=1)
-    prefijo = st.text_input("Prefijo de archivos", value="SMS")
-
-    if st.button("🎯 Generar CSV", use_container_width=True):
-        if df_export.empty:
-            st.warning("⚠️ No hay registros para exportar")
+        # Validar columnas SUSCRIPTOR
+        columnas_suscriptor = {"NUMERO", "NOMBRE", "FECHA", "CODIGO", "MONTO"}
+        if not columnas_suscriptor.issubset(df_suscriptor.columns):
+            st.error("❌ El archivo SUSCRIPTOR no tiene las columnas obligatorias")
+            st.error(f"**Columnas requeridas:** NUMERO, NOMBRE, FECHA, CODIGO, MONTO")
+            st.error(f"**Columnas encontradas:** {', '.join(df_suscriptor.columns)}")
             return
 
-        tamaño = len(df_export) // partes + 1
-        for i in range(partes):
-            inicio = i * tamaño
-            fin = inicio + tamaño
-            df_parte = df_export.iloc[inicio:fin]
-            if df_parte.empty:
-                continue
+        # Validar columnas PAGOS
+        columnas_pagos = {"ID_COBRANZA", "IMPORTE"}
+        if not columnas_pagos.issubset(df_pagos.columns):
+            st.error("❌ El archivo PAGOS no tiene las columnas obligatorias")
+            st.error(f"**Columnas requeridas:** ID_COBRANZA, IMPORTE")
+            st.error(f"**Columnas encontradas:** {', '.join(df_pagos.columns)}")
+            return
 
-            csv = df_parte.to_csv(index=False, sep=";", encoding="utf-8-sig")
-            st.download_button(
-                label=f"⬇️ Descargar {prefijo}_{i+1}.csv ({len(df_parte)} registros)",
-                data=csv,
-                file_name=f"{prefijo}_{i+1}.csv",
-                mime="text/csv",
-                key=f"download_{i}"
-            )
+        # Procesar datos
+        df_suscriptor["CODIGO"] = df_suscriptor["CODIGO"].astype(str)
+        df_suscriptor["MONTO"] = pd.to_numeric(df_suscriptor["MONTO"], errors="coerce").fillna(0)
+        df_pagos["ID_COBRANZA"] = df_pagos["ID_COBRANZA"].astype(str)
+        df_pagos["IMPORTE"] = pd.to_numeric(df_pagos["IMPORTE"], errors="coerce").fillna(0)
+
+        pagos_totales = df_pagos.groupby("ID_COBRANZA")["IMPORTE"].sum().reset_index()
+        pagos_totales.rename(columns={"IMPORTE": "TOTAL_PAGADO"}, inplace=True)
+
+        df_final = df_suscriptor.merge(pagos_totales, left_on="CODIGO", right_on="ID_COBRANZA", how="left")
+        df_final["TOTAL_PAGADO"] = df_final["TOTAL_PAGADO"].fillna(0)
+        df_final = df_final[df_final["TOTAL_PAGADO"] < df_final["MONTO"]]
+
+        columnas_exportar = ["NUMERO", "NOMBRE", "FECHA", "CODIGO", "MONTO"]
+        df_export = df_final[columnas_exportar].copy()
+
+        if len(df_export) == 0:
+            st.warning("⚠️ No hay registros con saldo pendiente. Todos los suscriptores están al día.")
+            return
+
+        st.success(f"✅ {len(df_export):,} registros con saldo pendiente")
+        st.dataframe(df_export, use_container_width=True, height=300)
+
+        st.markdown("---")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            partes = st.number_input("Cantidad de archivos CSV", min_value=1, value=1, max_value=10)
+        with col2:
+            prefijo = st.text_input("Prefijo de archivos", value="SMS")
+
+        if st.button("🎯 Generar CSV", use_container_width=True):
+            tamaño = len(df_export) // partes + 1
+            
+            st.markdown("### 📥 Archivos generados:")
+            
+            for i in range(partes):
+                inicio = i * tamaño
+                fin = inicio + tamaño
+                df_parte = df_export.iloc[inicio:fin]
+                
+                if df_parte.empty:
+                    continue
+
+                csv = df_parte.to_csv(index=False, sep=";", encoding="utf-8-sig")
+                st.download_button(
+                    label=f"⬇️ Descargar {prefijo}_{i+1}.csv ({len(df_parte)} registros)",
+                    data=csv,
+                    file_name=f"{prefijo}_{i+1}.csv",
+                    mime="text/csv",
+                    key=f"download_{i}",
+                    use_container_width=True
+                )
+            
+            st.success(f"✅ {partes} archivo(s) generado(s) correctamente")
+
+    except Exception as e:
+        st.error(f"❌ Error al procesar archivos: {str(e)}")
+        st.error("Verifica que tus archivos tengan el formato correcto.")
 
 
 if menu == "📊 Dashboard Cruce Deuda vs Pagos":
