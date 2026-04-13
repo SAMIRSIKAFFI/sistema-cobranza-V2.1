@@ -7,7 +7,7 @@ import io
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-from datetime import datetime
+from datetime import datetime, timedelta
 
 st.set_page_config(page_title="SISTEMA DE COBRANZA - RESULTADOS", layout="wide", initial_sidebar_state="expanded")
 
@@ -58,7 +58,7 @@ menu = st.sidebar.radio(
         "📊 Dashboard Cruce Deuda vs Pagos",
         "📈 Gráficos Interactivos",
         "📲 GENERADOR DE SMS",
-        "🚧 Módulo Histórico (En Desarrollo)"
+        "📈 Control Diario y Objetivos"
     ]
 )
 
@@ -443,7 +443,6 @@ def modulo_graficos():
 def modulo_sms():
     st.markdown('<div class="main-header">📲 GENERADOR DE SMS - CLIENTE VIVA</div>', unsafe_allow_html=True)
     
-    # Verificar que exista cartera cargada
     if "df_deuda_base" not in st.session_state or st.session_state.df_deuda_base is None:
         st.warning("⚠️ **No hay CARTERA cargada en el sistema**")
         st.info("👉 Primero debes ir al módulo **'📊 Dashboard Cruce Deuda vs Pagos'** y cargar la CARTERA base.")
@@ -455,93 +454,61 @@ def modulo_sms():
     
     st.markdown("---")
     
-    # Función para limpiar columnas
     def limpiar_columnas(df):
         df.columns = df.columns.str.strip().str.upper().str.replace(" ", "_")
         return df
     
-    # ==========================================
-    # PASO 1: SELECCIÓN DE TIPOS (MEJORADA)
-    # ==========================================
     st.markdown("### 🎯 PASO 1: Seleccionar TIPOS de Cartera para la Campaña")
     
     tipos_disponibles = sorted(df_cartera["TIPO"].unique().tolist())
-    
-    # Obtener conteo de registros por tipo
     tipo_conteo = df_cartera.groupby("TIPO").size().to_dict()
     
     st.markdown('<div class="tipo-box">', unsafe_allow_html=True)
-    
-    # Opción: Seleccionar todos
     seleccionar_todos = st.checkbox(
         "✅ SELECCIONAR TODOS LOS TIPOS",
         value=False,
         help="Marca esta opción para incluir todos los tipos en la campaña"
     )
-    
     st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown("---")
     
     if seleccionar_todos:
-        # Si marca "TODOS", mostrar resumen
         tipos_seleccionados = tipos_disponibles
-        
         st.success(f"✅ **TODOS LOS TIPOS SELECCIONADOS** ({len(tipos_seleccionados)} tipos)")
-        
-        # Mostrar tabla de resumen
         st.markdown("**📊 Resumen de tipos incluidos:**")
-        
         resumen_data = []
         for tipo in tipos_seleccionados:
             conteo = tipo_conteo.get(tipo, 0)
             resumen_data.append({"TIPO": tipo, "REGISTROS": f"{conteo:,}"})
-        
         df_resumen = pd.DataFrame(resumen_data)
         st.dataframe(df_resumen, use_container_width=True, hide_index=True)
-        
     else:
-        # Si NO marca "TODOS", mostrar checkboxes individuales
         st.markdown("**📋 Selecciona los tipos que deseas incluir en la campaña:**")
         st.markdown('<div class="tipo-box">', unsafe_allow_html=True)
-        
         tipos_seleccionados = []
-        
-        # Crear checkboxes para cada tipo
-        cols = st.columns(2)  # 2 columnas para mejor distribución
-        
+        cols = st.columns(2)
         for idx, tipo in enumerate(tipos_disponibles):
             col = cols[idx % 2]
             conteo = tipo_conteo.get(tipo, 0)
-            
             with col:
-                if st.checkbox(
-                    f"☑️ **{tipo}** ({conteo:,} registros)",
-                    value=False,
-                    key=f"tipo_{tipo}"
-                ):
+                if st.checkbox(f"☑️ **{tipo}** ({conteo:,} registros)", value=False, key=f"tipo_{tipo}"):
                     tipos_seleccionados.append(tipo)
-        
         st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Mostrar resumen de selección
         if tipos_seleccionados:
             st.success(f"✅ **{len(tipos_seleccionados)} tipo(s) seleccionado(s):** {', '.join(tipos_seleccionados)}")
         else:
             st.warning("⚠️ **No has seleccionado ningún tipo**")
     
-    # Validar que haya al menos un tipo seleccionado
     if not tipos_seleccionados:
         st.error("❌ **Debes seleccionar al menos UN tipo para continuar**")
         st.info("💡 Marca la casilla de un tipo específico o selecciona TODOS")
         return
     
-    # Filtrar cartera por tipos seleccionados
     df_cartera_filtrada = df_cartera[df_cartera["TIPO"].isin(tipos_seleccionados)].copy()
     
     st.markdown("---")
     
-    # Mostrar resumen de la cartera filtrada
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("📄 Registros Filtrados", f"{len(df_cartera_filtrada):,}")
@@ -552,9 +519,6 @@ def modulo_sms():
     
     st.markdown("---")
     
-    # ==========================================
-    # PASO 2: Cargar BASE SUSCRIPTOR
-    # ==========================================
     st.markdown("### 📂 PASO 2: Cargar BASE SUSCRIPTOR")
     archivo_suscriptor = st.file_uploader(
         "Subir archivo SUSCRIPTOR (NUMERO, NOMBRE, FECHA, CODIGO)",
@@ -569,26 +533,20 @@ def modulo_sms():
     try:
         df_suscriptor = pd.read_excel(archivo_suscriptor)
         df_suscriptor = limpiar_columnas(df_suscriptor)
-        
         columnas_suscriptor = {"CODIGO", "NUMERO", "NOMBRE", "FECHA"}
         if not columnas_suscriptor.issubset(df_suscriptor.columns):
             st.error("❌ Columnas faltantes en SUSCRIPTOR")
             st.error(f"**Requeridas:** CODIGO, NUMERO, NOMBRE, FECHA")
             st.error(f"**Encontradas:** {', '.join(df_suscriptor.columns)}")
             return
-        
         df_suscriptor["CODIGO"] = df_suscriptor["CODIGO"].astype(str)
         st.success(f"✅ Suscriptores: {len(df_suscriptor):,} registros")
-        
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
         return
     
     st.markdown("---")
     
-    # ==========================================
-    # PASO 3: Cargar BASE PAGOS
-    # ==========================================
     st.markdown("### 💵 PASO 3: Cargar BASE PAGOS")
     archivo_pagos = st.file_uploader(
         "Subir archivo PAGOS (CODIGO, PERIODO, IMPORTE)",
@@ -603,81 +561,53 @@ def modulo_sms():
     try:
         df_pagos = pd.read_excel(archivo_pagos)
         df_pagos = limpiar_columnas(df_pagos)
-        
         if "ID_COBRANZA" in df_pagos.columns:
             df_pagos = df_pagos.rename(columns={"ID_COBRANZA": "CODIGO"})
-        
         columnas_pagos = {"CODIGO", "PERIODO", "IMPORTE"}
         if not columnas_pagos.issubset(df_pagos.columns):
             st.error("❌ Columnas faltantes en PAGOS")
             st.error(f"**Requeridas:** CODIGO, PERIODO, IMPORTE")
             st.error(f"**Encontradas:** {', '.join(df_pagos.columns)}")
             return
-        
         df_pagos["CODIGO"] = df_pagos["CODIGO"].astype(str)
         df_pagos["PERIODO"] = df_pagos["PERIODO"].astype(str)
         df_pagos["IMPORTE"] = pd.to_numeric(df_pagos["IMPORTE"], errors="coerce").fillna(0)
-        
         st.success(f"✅ Pagos: {len(df_pagos):,} registros")
-        
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
         return
     
     st.markdown("---")
     
-    # ==========================================
-    # PASO 4: CRUCE Y ANÁLISIS
-    # ==========================================
     st.markdown("### 🔗 PASO 4: Cruce y Depuración Automática")
     
     with st.spinner("Procesando cruce con cartera VIVA..."):
         try:
-            # Preparar cartera filtrada
             df_cartera_filtrada["CODIGO"] = df_cartera_filtrada["ID_COBRANZA"].astype(str)
             df_cartera_filtrada["PERIODO"] = df_cartera_filtrada["PERIODO"].astype(str)
-            
-            # Calcular periodos totales por código
             periodos_totales = df_cartera_filtrada.groupby("CODIGO")["PERIODO"].count().reset_index()
             periodos_totales.columns = ["CODIGO", "PERIODOS_TOTALES"]
-            
-            # Calcular deuda total por código
             deuda_total = df_cartera_filtrada.groupby("CODIGO")["DEUDA"].sum().reset_index()
             deuda_total.columns = ["CODIGO", "DEUDA_TOTAL"]
-            
-            # Calcular periodos pagados por código
             periodos_pagados = df_pagos.groupby("CODIGO")["PERIODO"].count().reset_index()
             periodos_pagados.columns = ["CODIGO", "PERIODOS_PAGADOS"]
-            
-            # Calcular total pagado por código
             total_pagado = df_pagos.groupby("CODIGO")["IMPORTE"].sum().reset_index()
             total_pagado.columns = ["CODIGO", "TOTAL_PAGADO"]
-            
-            # Merge con suscriptor
             df_analisis = df_suscriptor.copy()
             df_analisis = df_analisis.merge(periodos_totales, on="CODIGO", how="left")
             df_analisis = df_analisis.merge(deuda_total, on="CODIGO", how="left")
             df_analisis = df_analisis.merge(periodos_pagados, on="CODIGO", how="left")
             df_analisis = df_analisis.merge(total_pagado, on="CODIGO", how="left")
-            
-            # Rellenar NaN
             df_analisis["PERIODOS_TOTALES"] = df_analisis["PERIODOS_TOTALES"].fillna(0).astype(int)
             df_analisis["PERIODOS_PAGADOS"] = df_analisis["PERIODOS_PAGADOS"].fillna(0).astype(int)
             df_analisis["DEUDA_TOTAL"] = df_analisis["DEUDA_TOTAL"].fillna(0)
             df_analisis["TOTAL_PAGADO"] = df_analisis["TOTAL_PAGADO"].fillna(0)
-            
-            # Calcular pendientes
             df_analisis["PERIODOS_PENDIENTES"] = df_analisis["PERIODOS_TOTALES"] - df_analisis["PERIODOS_PAGADOS"]
             df_analisis["SALDO_PENDIENTE"] = df_analisis["DEUDA_TOTAL"] - df_analisis["TOTAL_PAGADO"]
             df_analisis["SALDO_PENDIENTE"] = df_analisis["SALDO_PENDIENTE"].apply(lambda x: max(0, x))
-            
-            # SIEMPRE DEPURAR: Eliminar pagos totales
             df_analisis_depurado = df_analisis[df_analisis["PERIODOS_PENDIENTES"] > 0].copy()
-            
             eliminados_pago_total = len(df_analisis) - len(df_analisis_depurado)
-            
             st.success("✅ Cruce realizado y pagos totales depurados automáticamente")
-            
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("👥 Total Inicial", f"{len(df_analisis):,}")
@@ -685,7 +615,6 @@ def modulo_sms():
                 st.metric("❌ Pagos Totales (eliminados)", f"{eliminados_pago_total:,}")
             with col3:
                 st.metric("✅ Con Saldo Pendiente", f"{len(df_analisis_depurado):,}")
-            
         except Exception as e:
             st.error(f"❌ Error en cruce: {str(e)}")
             return
@@ -696,7 +625,6 @@ def modulo_sms():
     
     st.markdown("---")
     
-    # Vista previa
     with st.expander("👁️ Vista previa de datos procesados"):
         st.dataframe(
             df_analisis_depurado[["CODIGO", "NOMBRE", "NUMERO", "PERIODOS_TOTALES", "PERIODOS_PAGADOS", "PERIODOS_PENDIENTES", "SALDO_PENDIENTE"]].head(20),
@@ -705,9 +633,6 @@ def modulo_sms():
     
     st.markdown("---")
     
-    # ==========================================
-    # PASO 5: OPCIONES DE CAMPAÑA
-    # ==========================================
     st.markdown("### 🎯 PASO 5: Configurar Campaña SMS")
     
     st.info("💡 Los pagos totales ya fueron depurados automáticamente. Ahora elige el tipo de campaña:")
@@ -719,10 +644,9 @@ def modulo_sms():
             "🟡 CAMPAÑA GENERAL: Todos con al menos 1 periodo pendiente"
         ],
         index=1,
-        help="Agresiva = solo quienes NO pagaron nada | General = todos con al menos 1 pendiente"
+        help="Agresiva = solo quienes NO pagaron nada | General = todos con al menos 1 pendiente (incluye morosos totales + pagadores parciales)"
     )
     
-    # Filtrar según opción
     if "AGRESIVA" in opcion_campana:
         df_campana = df_analisis_depurado[df_analisis_depurado["PERIODOS_PAGADOS"] == 0].copy()
         tipo_campana = "MOROSOS"
@@ -738,9 +662,6 @@ def modulo_sms():
     
     st.markdown("---")
     
-    # ==========================================
-    # Configuración de archivos
-    # ==========================================
     st.markdown("### ⚙️ Configuración de Archivos")
     
     col1, col2 = st.columns(2)
@@ -761,18 +682,13 @@ def modulo_sms():
     
     st.markdown("---")
     
-    # ==========================================
-    # Botón generar
-    # ==========================================
     if st.button("🚀 GENERAR ARCHIVOS SMS PARA CAMPAÑA", type="primary", use_container_width=True):
         
         st.markdown("### 📥 ARCHIVOS GENERADOS:")
         
-        # Preparar datos para SMS
         df_csv = df_campana[["NUMERO", "NOMBRE", "FECHA", "CODIGO", "SALDO_PENDIENTE"]].copy()
         df_csv = df_csv.rename(columns={"SALDO_PENDIENTE": "MONTO"})
         
-        # Información de la campaña
         st.markdown('<div class="tipo-box">', unsafe_allow_html=True)
         st.markdown(f"""
         **📊 RESUMEN DE CAMPAÑA VIVA:**
@@ -787,7 +703,6 @@ def modulo_sms():
         
         st.markdown("---")
         
-        # Dividir en archivos
         tamaño = len(df_csv) // num_archivos + 1
         
         for i in range(num_archivos):
@@ -799,7 +714,6 @@ def modulo_sms():
                 continue
             
             csv = df_parte.to_csv(index=False, sep=";", encoding="utf-8-sig")
-            
             nombre_archivo = f"{prefijo}_{i+1}.csv" if num_archivos > 1 else f"{prefijo}.csv"
             
             st.download_button(
@@ -815,12 +729,172 @@ def modulo_sms():
         st.balloons()
 
 
+def modulo_control_diario():
+    st.markdown('<div class="main-header">📊 CONTROL DIARIO DE RECUPERACIÓN Y OBJETIVOS</div>', unsafe_allow_html=True)
+    
+    if "objetivos" not in st.session_state:
+        st.session_state.objetivos = {"diario": 10000, "semanal": 50000, "mensual": 200000}
+    
+    if "pagos_acumulados" not in st.session_state:
+        st.session_state.pagos_acumulados = pd.DataFrame(columns=["CODIGO", "IMPORTE", "FECHA"])
+    
+    st.markdown("## 🎯 Configuración de Objetivos")
+    
+    with st.expander("⚙️ Editar Objetivos", expanded=False):
+        st.info("💡 Define tus metas de recuperación. Puedes editarlas en cualquier momento.")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            objetivo_diario = st.number_input("Meta Diaria (Bs.)", min_value=0, value=st.session_state.objetivos["diario"], step=1000)
+        with col2:
+            objetivo_semanal = st.number_input("Meta Semanal (Bs.)", min_value=0, value=st.session_state.objetivos["semanal"], step=5000)
+        with col3:
+            objetivo_mensual = st.number_input("Meta Mensual (Bs.)", min_value=0, value=st.session_state.objetivos["mensual"], step=10000)
+        
+        if st.button("💾 Guardar Objetivos", use_container_width=True):
+            st.session_state.objetivos = {"diario": objetivo_diario, "semanal": objetivo_semanal, "mensual": objetivo_mensual}
+            st.success("✅ Objetivos actualizados correctamente")
+            st.rerun()
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("🎯 Objetivo Diario", f"Bs. {st.session_state.objetivos['diario']:,.2f}")
+    with col2:
+        st.metric("🎯 Objetivo Semanal", f"Bs. {st.session_state.objetivos['semanal']:,.2f}")
+    with col3:
+        st.metric("🎯 Objetivo Mensual", f"Bs. {st.session_state.objetivos['mensual']:,.2f}")
+    
+    st.markdown("---")
+    
+    st.markdown("## 📥 Registrar Pagos del Día")
+    
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        st.info("📂 Sube tu archivo Excel con los pagos. Puedes cargar varias veces al día y se acumularán automáticamente.")
+    with col2:
+        if st.button("🔄 Limpiar Todo", use_container_width=True):
+            st.session_state.pagos_acumulados = pd.DataFrame(columns=["CODIGO", "IMPORTE", "FECHA"])
+            st.success("✅ Pagos eliminados")
+            st.rerun()
+    
+    archivo_pagos_diarios = st.file_uploader("Subir archivo PAGOS DIARIOS (debe tener: CODIGO, IMPORTE, FECHA)", type=["xlsx"], key="pagos_diarios")
+    
+    if archivo_pagos_diarios:
+        try:
+            df_nuevos = pd.read_excel(archivo_pagos_diarios)
+            df_nuevos.columns = df_nuevos.columns.str.strip().str.upper().str.replace(" ", "_")
+            if not {"CODIGO", "IMPORTE", "FECHA"}.issubset(df_nuevos.columns):
+                st.error("❌ El archivo debe tener: CODIGO, IMPORTE, FECHA")
+                st.error(f"**Encontradas:** {', '.join(df_nuevos.columns)}")
+            else:
+                df_nuevos["CODIGO"] = df_nuevos["CODIGO"].astype(str)
+                df_nuevos["IMPORTE"] = pd.to_numeric(df_nuevos["IMPORTE"], errors="coerce").fillna(0)
+                df_nuevos["FECHA"] = pd.to_datetime(df_nuevos["FECHA"], errors="coerce")
+                df_nuevos = df_nuevos.dropna(subset=["FECHA"])
+                if len(df_nuevos) == 0:
+                    st.error("❌ No hay registros válidos")
+                else:
+                    st.session_state.pagos_acumulados = pd.concat([st.session_state.pagos_acumulados, df_nuevos[["CODIGO", "IMPORTE", "FECHA"]]], ignore_index=True)
+                    st.session_state.pagos_acumulados = st.session_state.pagos_acumulados.drop_duplicates()
+                    st.success(f"✅ {len(df_nuevos):,} pagos agregados. Total: {len(st.session_state.pagos_acumulados):,}")
+                    st.balloons()
+                    st.rerun()
+        except Exception as e:
+            st.error(f"❌ Error: {str(e)}")
+    
+    if len(st.session_state.pagos_acumulados) == 0:
+        st.warning("⚠️ No hay pagos registrados. Sube un archivo para comenzar.")
+        return
+    
+    st.markdown("---")
+    
+    df_pagos = st.session_state.pagos_acumulados.copy()
+    df_pagos["FECHA"] = pd.to_datetime(df_pagos["FECHA"])
+    
+    fecha_hoy = df_pagos["FECHA"].max().date()
+    fecha_inicio_semana = fecha_hoy - timedelta(days=fecha_hoy.weekday())
+    fecha_inicio_mes = fecha_hoy.replace(day=1)
+    
+    pagos_hoy = df_pagos[df_pagos["FECHA"].dt.date == fecha_hoy]
+    pagos_semana = df_pagos[df_pagos["FECHA"].dt.date >= fecha_inicio_semana]
+    pagos_mes = df_pagos[df_pagos["FECHA"].dt.date >= fecha_inicio_mes]
+    
+    recuperado_hoy = pagos_hoy["IMPORTE"].sum()
+    recuperado_semana = pagos_semana["IMPORTE"].sum()
+    recuperado_mes = pagos_mes["IMPORTE"].sum()
+    
+    porcentaje_dia = (recuperado_hoy / st.session_state.objetivos["diario"] * 100) if st.session_state.objetivos["diario"] > 0 else 0
+    porcentaje_semana = (recuperado_semana / st.session_state.objetivos["semanal"] * 100) if st.session_state.objetivos["semanal"] > 0 else 0
+    porcentaje_mes = (recuperado_mes / st.session_state.objetivos["mensual"] * 100) if st.session_state.objetivos["mensual"] > 0 else 0
+    
+    st.markdown(f"## 📅 HOY - {fecha_hoy.strftime('%A, %d de %B de %Y')}")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("🎯 Objetivo", f"Bs. {st.session_state.objetivos['diario']:,.2f}")
+    with col2:
+        delta = recuperado_hoy - st.session_state.objetivos['diario']
+        st.metric("✅ Recuperado", f"Bs. {recuperado_hoy:,.2f}", f"{delta:+,.2f}")
+    with col3:
+        emoji = "🎉" if porcentaje_dia >= 100 else "⚠️" if porcentaje_dia >= 80 else "❌"
+        st.metric("📊 Cumplimiento", f"{porcentaje_dia:.1f}% {emoji}", f"{len(pagos_hoy)} pagos")
+    
+    st.progress(min(porcentaje_dia / 100, 1.0))
+    
+    if porcentaje_dia >= 100:
+        st.success(f"🎉 ¡Excelente! Superaste el objetivo en {porcentaje_dia - 100:.1f}%")
+    elif porcentaje_dia >= 80:
+        st.warning(f"⚠️ Vas bien, faltan Bs. {st.session_state.objetivos['diario'] - recuperado_hoy:,.2f}")
+    else:
+        st.error(f"❌ Acelera: faltan Bs. {st.session_state.objetivos['diario'] - recuperado_hoy:,.2f}")
+    
+    st.markdown("---")
+    st.markdown("## 📅 ESTA SEMANA")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("🎯 Objetivo", f"Bs. {st.session_state.objetivos['semanal']:,.2f}")
+    with col2:
+        st.metric("✅ Recuperado", f"Bs. {recuperado_semana:,.2f}")
+    with col3:
+        emoji = "🎉" if porcentaje_semana >= 100 else "⚠️" if porcentaje_semana >= 80 else "❌"
+        st.metric("📊 Cumplimiento", f"{porcentaje_semana:.1f}% {emoji}")
+    
+    st.progress(min(porcentaje_semana / 100, 1.0))
+    
+    st.markdown("---")
+    st.markdown("## 📅 ESTE MES")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("🎯 Objetivo", f"Bs. {st.session_state.objetivos['mensual']:,.2f}")
+    with col2:
+        st.metric("✅ Recuperado", f"Bs. {recuperado_mes:,.2f}")
+    with col3:
+        st.metric("⏰ Falta", f"Bs. {st.session_state.objetivos['mensual'] - recuperado_mes:,.2f}")
+    with col4:
+        emoji = "🎉" if porcentaje_mes >= 100 else "⚠️" if porcentaje_mes >= 80 else "❌"
+        st.metric("📊 Cumplimiento", f"{porcentaje_mes:.1f}% {emoji}")
+    
+    st.progress(min(porcentaje_mes / 100, 1.0))
+    
+    dias_transcurridos = (fecha_hoy - fecha_inicio_mes).days + 1
+    promedio_diario = recuperado_mes / dias_transcurridos
+    proyeccion = promedio_diario * 30
+    
+    st.markdown("### 🔮 Proyección Fin de Mes")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Proyección", f"Bs. {proyeccion:,.2f}", f"{(proyeccion / st.session_state.objetivos['mensual'] * 100):.1f}%")
+    with col2:
+        necesitas = (st.session_state.objetivos['mensual'] - recuperado_mes) / max(30 - dias_transcurridos, 1)
+        st.metric("Necesitas/día", f"Bs. {necesitas:,.2f}")
+
+
 if menu == "📊 Dashboard Cruce Deuda vs Pagos":
     modulo_cruce()
 elif menu == "📈 Gráficos Interactivos":
     modulo_graficos()
 elif menu == "📲 GENERADOR DE SMS":
     modulo_sms()
-elif menu == "🚧 Módulo Histórico (En Desarrollo)":
-    st.title("📈 Módulo Histórico")
-    st.info("🚧 Este módulo está en desarrollo. Próximamente podrás ver análisis históricos acumulados.")
+elif menu == "📈 Control Diario y Objetivos":
+    modulo_control_diario()
