@@ -100,6 +100,7 @@ def modulo_cruce():
 
                     df_deuda["ID_COBRANZA"] = df_deuda["ID_COBRANZA"].astype(str)
                     df_deuda["PERIODO"] = df_deuda["PERIODO"].astype(str)
+                    df_deuda["TIPO"] = df_deuda["TIPO"].astype(str)
                     df_deuda["DEUDA"] = pd.to_numeric(df_deuda["DEUDA"], errors="coerce").fillna(0)
 
                     if (df_deuda["DEUDA"] < 0).any():
@@ -220,10 +221,10 @@ def modulo_cruce():
                 with st.expander("🔍 FILTROS Y BÚSQUEDA", expanded=False):
                     col1, col2, col3 = st.columns(3)
                     with col1:
-                        periodos = ["Todos"] + sorted(resultado["PERIODO"].unique().tolist())
+                        periodos = ["Todos"] + sorted(resultado["PERIODO"].astype(str).unique().tolist())
                         filtro_periodo = st.selectbox("📅 Periodo", periodos)
                     with col2:
-                        tipos = ["Todos"] + sorted(resultado["TIPO"].unique().tolist())
+                        tipos = ["Todos"] + sorted(resultado["TIPO"].astype(str).unique().tolist())
                         filtro_tipo = st.selectbox("🏷️ Tipo", tipos)
                     with col3:
                         estados = ["Todos", "✅ PAGADO", "⏳ PENDIENTE"]
@@ -460,7 +461,7 @@ def modulo_sms():
     
     st.markdown("### 🎯 PASO 1: Seleccionar TIPOS de Cartera para la Campaña")
     
-    tipos_disponibles = sorted(df_cartera["TIPO"].unique().tolist())
+    tipos_disponibles = sorted(df_cartera["TIPO"].astype(str).unique().tolist())
     tipo_conteo = df_cartera.groupby("TIPO").size().to_dict()
     
     st.markdown('<div class="tipo-box">', unsafe_allow_html=True)
@@ -505,7 +506,7 @@ def modulo_sms():
         st.info("💡 Marca la casilla de un tipo específico o selecciona TODOS")
         return
     
-    df_cartera_filtrada = df_cartera[df_cartera["TIPO"].isin(tipos_seleccionados)].copy()
+    df_cartera_filtrada = df_cartera[df_cartera["TIPO"].astype(str).isin(tipos_seleccionados)].copy()
     
     st.markdown("---")
     
