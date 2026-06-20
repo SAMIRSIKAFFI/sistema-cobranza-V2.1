@@ -769,29 +769,44 @@ def modulo_control_diario():
     
     col1, col2 = st.columns([2, 1])
     with col1:
-        st.info("📂 Sube tu archivo Excel con los pagos. Puedes cargar varias veces al día y se acumularán automáticamente.")
+        st.info("📂 Sube tu archivo Excel con los pagos. Acepta columnas CODIGO o ID_COBRANZA, y FECHA o FECHA_PAGO. Puedes cargar varias veces al día y se acumularán automáticamente.")
     with col2:
         if st.button("🔄 Limpiar Todo", use_container_width=True):
             st.session_state.pagos_acumulados = pd.DataFrame(columns=["CODIGO", "IMPORTE", "FECHA"])
             st.success("✅ Pagos eliminados")
             st.rerun()
     
-    archivo_pagos_diarios = st.file_uploader("Subir archivo PAGOS DIARIOS (debe tener: CODIGO, IMPORTE, FECHA)", type=["xlsx"], key="pagos_diarios")
+    archivo_pagos_diarios = st.file_uploader(
+        "Subir archivo PAGOS DIARIOS (acepta CODIGO/ID_COBRANZA, IMPORTE, FECHA/FECHA_PAGO)",
+        type=["xlsx"],
+        key="pagos_diarios"
+    )
     
     if archivo_pagos_diarios:
         try:
             df_nuevos = pd.read_excel(archivo_pagos_diarios)
             df_nuevos.columns = df_nuevos.columns.str.strip().str.upper().str.replace(" ", "_")
+            
+            # ============================================
+            # MAPEO DE COLUMNAS ALTERNATIVAS
+            # CODIGO = ID_COBRANZA | FECHA = FECHA_PAGO
+            # ============================================
+            if "CODIGO" not in df_nuevos.columns and "ID_COBRANZA" in df_nuevos.columns:
+                df_nuevos = df_nuevos.rename(columns={"ID_COBRANZA": "CODIGO"})
+            
+            if "FECHA" not in df_nuevos.columns and "FECHA_PAGO" in df_nuevos.columns:
+                df_nuevos = df_nuevos.rename(columns={"FECHA_PAGO": "FECHA"})
+            
             if not {"CODIGO", "IMPORTE", "FECHA"}.issubset(df_nuevos.columns):
-                st.error("❌ El archivo debe tener: CODIGO, IMPORTE, FECHA")
-                st.error(f"**Encontradas:** {', '.join(df_nuevos.columns)}")
+                st.error("❌ El archivo debe tener: CODIGO (o ID_COBRANZA), IMPORTE, FECHA (o FECHA_PAGO)")
+                st.error(f"**Columnas encontradas:** {', '.join(df_nuevos.columns)}")
             else:
                 df_nuevos["CODIGO"] = df_nuevos["CODIGO"].astype(str)
                 df_nuevos["IMPORTE"] = pd.to_numeric(df_nuevos["IMPORTE"], errors="coerce").fillna(0)
                 df_nuevos["FECHA"] = pd.to_datetime(df_nuevos["FECHA"], errors="coerce")
                 df_nuevos = df_nuevos.dropna(subset=["FECHA"])
                 if len(df_nuevos) == 0:
-                    st.error("❌ No hay registros válidos")
+                    st.error("❌ No hay registros válidos (revisa el formato de fecha)")
                 else:
                     st.session_state.pagos_acumulados = pd.concat([st.session_state.pagos_acumulados, df_nuevos[["CODIGO", "IMPORTE", "FECHA"]]], ignore_index=True)
                     st.session_state.pagos_acumulados = st.session_state.pagos_acumulados.drop_duplicates()
